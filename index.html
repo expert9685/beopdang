@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
 <style>
   :root{--ink:#f6ead2;--dim:#c9b48f;--gold:#e7c26a;--panel:rgba(30,12,6,.78)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -1766,11 +1767,62 @@ function loop(){
 }
 loop();
 
+
+/* ---------- 공개 사이트용 실시간 동기화 (MQTT) ---------- */
+function makeMqttRoom(){
+  if(!window.mqtt || typeof mqtt.connect!=="function") return null;
+  const TOPIC="kis-expert9685/beopdang/v1";
+  const qs=new URLSearchParams(location.search);
+  const URLS = qs.get("broker") ? [qs.get("broker")] : ["wss://broker.emqx.io:8084/mqtt","wss://broker.hivemq.com:8884/mqtt"];
+  const id=Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+  const others=new Map(); let mine=null, peersCb=null, closeCb=null, connCb=null, client=null, ok=false, urlIdx=0, lastSent=0, trail=0;
+  const emit=()=>{ if(!peersCb) return;
+    const list=[{peer:id, kind:"viewer", sameTab:true, presence:mine||{}}];
+    for(const [k,v] of others) list.push({peer:k, kind:"viewer", sameTab:false, presence:v.p});
+    try{ peersCb({peers:list}); }catch(e){} };
+  const setConn=v=>{ ok=v; try{ connCb&&connCb(v); }catch(e){} };
+  const pub=(sub,obj)=>{ if(client && ok) try{ client.publish(TOPIC+"/"+sub, JSON.stringify(obj)); }catch(e){} };
+  const sendNow=()=>{ lastSent=Date.now(); if(mine) pub("p",{id,p:mine}); };
+  function connect(){
+    const url=URLS[urlIdx%URLS.length];
+    let gotIn=false;
+    client=mqtt.connect(url,{clientId:"bd_"+id+"_"+urlIdx, keepalive:20, reconnectPeriod:4000, connectTimeout:8000, clean:true,
+      will:{topic:TOPIC+"/bye", payload:JSON.stringify({id}), qos:0, retain:false}});
+    const c=client;
+    const fail=setTimeout(()=>{ if(!gotIn && c===client && URLS.length>1){ try{c.end(true);}catch(e){} urlIdx++; connect(); } },9000);
+    c.on("connect",()=>{ gotIn=true; clearTimeout(fail); c.subscribe(TOPIC+"/#"); setConn(true); pub("hi",{id}); sendNow(); });
+    c.on("close",()=>{ if(c===client && ok) setConn(false); });
+    c.on("message",(t,buf)=>{
+      let m; try{ m=JSON.parse(buf.toString()); }catch(e){ return; }
+      if(!m || typeof m.id!=="string" || m.id.length>40 || m.id===id) return;
+      const sub=t.slice(TOPIC.length+1);
+      if(sub==="p" && m.p && typeof m.p==="object"){ others.set(m.id,{p:m.p,t:Date.now()}); emit(); }
+      else if(sub==="hi"){ sendNow(); }
+      else if(sub==="bye"){ if(others.delete(m.id)) emit(); }
+    });
+  }
+  setInterval(()=>{ const now=Date.now(); let ch=false;
+    for(const [k,v] of others) if(now-v.t>15000){ others.delete(k); ch=true; }
+    if(ch) emit();
+    if(now-lastSent>4000) sendNow(); },2000);
+  addEventListener("pagehide",()=>{ pub("bye",{id}); });
+  connect();
+  return {
+    presence(p){ mine=p; const now=Date.now();
+      if(now-lastSent>=150) sendNow();
+      else if(!trail) trail=setTimeout(()=>{ trail=0; sendNow(); },150-(now-lastSent));
+      emit(); return Promise.resolve(); },
+    onPeers(cb,onClose){ peersCb=cb; closeCb=onClose; emit(); },
+    onConnection(cb){ connCb=cb; try{ cb(ok); }catch(e){} }
+  };
+}
 /* ---------- room ---------- */
 (async()=>{
   try{
-    if(!window.claude || typeof window.claude.use!=="function") return;
-    const r=await window.claude.use("room"); if(!r) return;
+    let r=null;
+    if(window.claude && typeof window.claude.use==="function") r=await window.claude.use("room");
+    if(!r) r=makeMqttRoom();
+    if(!r) return;
     room=r;
     room.onPeers(ch=>{ peers=ch.peers; syncRemotes(); occupied=computeOccupants(); updateHint(); updatePeopleUI(); },
       ()=>{ room=null; peers=[]; for(const [k,v] of remotes) disposeAvatar(v.av); remotes.clear(); $("conn").textContent="혼자 정진 중"; updatePeopleUI(); });
