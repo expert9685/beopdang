@@ -2238,10 +2238,47 @@ function drawBanner(ln, beat){
 function showLine(ln,i){ if(subOn) drawBanner(ln,-1); }
 $("musBtn").onclick=()=>{ ensureAudio(); if(!ac) return; openMusSheet(); };
 $("subBtn").onclick=()=>{ subOn=!subOn; subBoard.visible=subOn; $("subBtn").classList.toggle("on",subOn); $("subBtn").textContent=subOn?"📜 자막 끄기":"📜 자막 보기"; if(subOn && cur) drawBanner(cur, lastBeat); };
+/* 노스님 머리 위 말풍선: 지금 읊는 구절을 한 구절씩, 읊은 글자는 진하게 */
+const monkCv=document.createElement("canvas"); monkCv.width=1024; monkCv.height=320;
+const monkTex=new THREE.CanvasTexture(monkCv); monkTex.encoding=THREE.sRGBEncoding; monkTex.anisotropy=4;
+const monkBub=new THREE.Sprite(new THREE.SpriteMaterial({map:monkTex,transparent:true,depthWrite:false,opacity:0}));
+monkBub.scale.set(2.6,.81,1); monkBub.renderOrder=6; monkBub.visible=false; scene.add(monkBub);
+const MB={t0:0, end:0, on:false};
+function drawMonkBubble(ln,b){
+  const g=monkCv.getContext("2d"), w=monkCv.width, h=monkCv.height; g.clearRect(0,0,w,h);
+  const words=ln.h.split(/\s+/).filter(Boolean); let fs=74;
+  g.font=`700 ${fs}px 'Noto Serif KR',serif`;
+  const gap=fs*.45, measure=()=>words.reduce((a,wd)=>a+g.measureText(wd).width,0)+gap*(words.length-1);
+  while(measure()>w-150 && fs>40){ fs-=4; g.font=`700 ${fs}px 'Noto Serif KR',serif`; }
+  const tw=measure(), bw=Math.min(w-16,tw+110), bh=(ln.c?190:140), bx=(w-bw)/2, by=16;
+  g.fillStyle="rgba(255,249,236,.95)"; g.strokeStyle="rgba(120,70,20,.6)"; g.lineWidth=5;
+  g.beginPath(); const r=40; g.moveTo(bx+r,by); g.arcTo(bx+bw,by,bx+bw,by+bh,r); g.arcTo(bx+bw,by+bh,bx,by+bh,r); g.arcTo(bx,by+bh,bx,by,r); g.arcTo(bx,by,bx+bw,by,r); g.closePath(); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(w/2-24,by+bh-3); g.lineTo(w/2,by+bh+44); g.lineTo(w/2+24,by+bh-3); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(w/2-24,by+bh); g.lineTo(w/2,by+bh+44); g.lineTo(w/2+24,by+bh); g.stroke();
+  g.fillStyle="rgba(255,249,236,.95)"; g.fillRect(w/2-22,by+bh-6,44,8);
+  g.textBaseline="middle"; g.textAlign="left";
+  let x=(w-tw)/2, k=0; const y=by+(ln.c?72:bh/2);
+  words.forEach(wd=>{ for(const ch of wd){ g.fillStyle = k<=b ? "#7a1e10" : "#a89a86"; g.fillText(ch,x,y); x+=g.measureText(ch).width; k++; } x+=gap; });
+  if(ln.c){ g.textAlign="center"; g.font=`500 38px 'Noto Serif KR',serif`; g.fillStyle="#8a6a3a"; g.fillText(ln.c,w/2,by+bh-42); }
+  monkTex.needsUpdate=true;
+}
+function monkBubbleLine(ln,t){
+  if(!ln || ln.bell){ MB.on=false; return; }
+  drawMonkBubble(ln,-1); MB.on=true; MB.t0=performance.now(); MB.end=MB.t0+(ln.t0+ln.d-t)*1000;
+}
+function tickMonkBubble(now){
+  const m=MONK.av; if(!m){ monkBub.visible=false; return; }
+  let a=0, k=1;
+  if(MB.on){ const e=now-MB.t0, left=MB.end-now; a=Math.min(1,e/250, Math.max(0,left-150)/400); k=e<250? .7+.3*(e/250) : 1; }
+  else a=Math.max(0,monkBub.material.opacity-.06);
+  monkBub.material.opacity=a; monkBub.visible=a>.01;
+  monkBub.position.set(m.root.position.x, m.root.position.y+1.72+(1-k)*.1, m.root.position.z);
+  monkBub.scale.set(2.6*k,.81*k,1);
+}
 function broadcast(){
   const now=Date.now()/1000, t=now%CYCLE, i=findLine(t), ln=TL[i];
   if(ln!==cur){
-    cur=ln; lastBeat=-1; showLine(ln,i);
+    cur=ln; lastBeat=-1; showLine(ln,i); monkBubbleLine(ln,t);
     if(entered){
       if(ln.bell){ if(soundOn) bigBell(); voiceRest(); }
       if(soundOn) setDrone(!ln.bell);
@@ -2252,9 +2289,10 @@ function broadcast(){
     if(b>=0 && b<ln.n && b!==lastBeat){
       lastBeat=b;
       if(subOn) drawBanner(ln,b);
+      if(MB.on) drawMonkBubble(ln,b);
       MONK.strikeAt=performance.now();
       if(entered){ if(soundOn && ac) moktak(b===0); chantSyllable(ln.syl[b], ln.beat, b, ln.n); }
-    }else if(b>=ln.n && lastBeat!==ln.n){ lastBeat=ln.n; if(subOn) drawBanner(ln,ln.n); }
+    }else if(b>=ln.n && lastBeat!==ln.n){ lastBeat=ln.n; if(subOn) drawBanner(ln,ln.n); if(MB.on) drawMonkBubble(ln,ln.n); }
   }
 
   const sec=Math.floor(now);
@@ -2382,7 +2420,7 @@ function loop(){
   for(let i=0;i<moteN;i++){ const [x,y,z,ph]=moteSeed[i]; const yy=(y+tt*.18)%6; motePos[i*3]=x+Math.sin(tt*.3+ph)*.3; motePos[i*3+1]=1.2+yy; motePos[i*3+2]=z+Math.cos(tt*.25+ph)*.3; }
   moteGeo.attributes.position.needsUpdate=true;
   broadcast(); musicTick();
-  animateMonk(now, !!(cur && !cur.bell));
+  animateMonk(now, !!(cur && !cur.bell)); tickMonkBubble(now);
   renderer.render(scene,camera);
 }
 loop();
