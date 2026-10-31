@@ -702,14 +702,24 @@ const ZONE={k:0};
 function isIndoor(x,z){ if(Math.abs(x)<13 && z>-11.5 && z<20) return true; for(const S of SHRINES){ if(x>S.x0&&x<S.x1&&z>S.z0&&z<S.z1) return true; } return false; }
 function zoneMix(dt){ if(!ac) return; const tgt = (entered && isIndoor(me.x,me.z)) ? 1 : 0; ZONE.k += (tgt-ZONE.k)*Math.min(1,dt*1.4);
   const cz=chantZone(); if(cz) cz.gain.value = ZONE.k; if(MUS && MUS.zone) MUS.zone.gain.value = 1-.86*ZONE.k; }
-/* 첨부 음원 배경음악 (audio/bgm.mp3, 반복 재생) */
-const FM={buf:null,src:null,loading:null,g:null};
-function fmLoad(){ if(FM.buf) return Promise.resolve(FM.buf); if(FM.loading) return FM.loading;
-  const tryP=p=>fetch(p).then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(a=>new Promise((res,rej)=>ac.decodeAudioData(a,res,rej)));
-  FM.loading=tryP("audio/bgm.mp3").catch(()=>tryP("bgm.mp3")).catch(()=>tryP("audio/L00051-003.mp3")).catch(()=>tryP("L00051-003.mp3")).then(b=>{ FM.buf=b; return b; }).catch(()=>{ FM.loading=null; return null; }); return FM.loading; }
-function fmStart(){ if(!ac || FM.src) return; buildMusic(); fmLoad().then(b=>{ if(!b){ toast("배경음악 파일(audio/bgm.mp3)을 찾지 못했어요"); return; } if(FM.src || !musicOn || !MSTY[musStyle].file) return;
-  if(!FM.g){ FM.g=ac.createGain(); FM.g.gain.value=.9; FM.g.connect(MUS.bus); } const src=ac.createBufferSource(); src.buffer=b; src.loop=true; src.connect(FM.g); src.start(); FM.src=src; }); }
-function fmStop(){ if(FM.src){ try{ FM.src.stop(); }catch(e){} FM.src.disconnect(); FM.src=null; } }
+/* 첨부 음원 배경음악: <audio>로 흘려 받아 재생 (휴대폰에서 통째로 디코딩하지 않아 가볍고 확실함) */
+const FM={el:null,node:null,want:false,urls:["audio/bgm.mp3","bgm.mp3","audio/L00051-003.mp3","L00051-003.mp3"],ui:0,g:null};
+function fmChain(){ // 산사 현장 녹음은 조용한 구간이 길어서(평균 약 -28 LUFS) 재생할 때 키우고, 종소리는 압축해 깨지지 않게 함 (파일 자체는 원본 그대로)
+  FM.g=ac.createGain(); FM.g.gain.value=2.6;
+  const cp=ac.createDynamicsCompressor(); cp.threshold.value=-26; cp.knee.value=12; cp.ratio.value=5; cp.attack.value=.004; cp.release.value=.35;
+  const lim=ac.createDynamicsCompressor(); lim.threshold.value=-6; lim.knee.value=2; lim.ratio.value=20; lim.attack.value=.002; lim.release.value=.2;
+  FM.g.connect(cp).connect(lim).connect(MUS.bus); }
+function fmStart(){
+  if(!ac) return; buildMusic();
+  if(!FM.el){
+    const el=new Audio(); el.loop=true; el.preload="auto"; el.playsInline=true; el.setAttribute("playsinline",""); el.src=FM.urls[0];
+    el.addEventListener("error",()=>{ FM.ui++; if(FM.ui<FM.urls.length){ el.src=FM.urls[FM.ui]; el.load(); if(FM.want) el.play().catch(()=>{}); } else toast("배경음악 파일을 불러오지 못했어요"); });
+    FM.el=el;
+    try{ FM.node=ac.createMediaElementSource(el); fmChain(); FM.node.connect(FM.g); }catch(e){ FM.node=null; el.volume=.9; }
+  }
+  FM.want=true; const pr=FM.el.play(); if(pr && pr.catch) pr.catch(()=>{});
+}
+function fmStop(){ FM.want=false; if(FM.el) FM.el.pause(); }
 
 
 /* ---------- 불교풍 배경 음악 (직접 작곡·합성: 화음 패드 · 가야금풍 튕김 · 대금풍 선율 · 풍경) ---------- */
