@@ -706,7 +706,7 @@ function zoneMix(dt){ if(!ac) return; const tgt = (entered && isIndoor(me.x,me.z
 const FM={buf:null,src:null,loading:null,g:null};
 function fmLoad(){ if(FM.buf) return Promise.resolve(FM.buf); if(FM.loading) return FM.loading;
   const tryP=p=>fetch(p).then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(a=>new Promise((res,rej)=>ac.decodeAudioData(a,res,rej)));
-  FM.loading=tryP("audio/bgm.mp3").catch(()=>tryP("bgm.mp3")).then(b=>{ FM.buf=b; return b; }).catch(()=>{ FM.loading=null; return null; }); return FM.loading; }
+  FM.loading=tryP("audio/bgm.mp3").catch(()=>tryP("bgm.mp3")).catch(()=>tryP("audio/L00051-003.mp3")).catch(()=>tryP("L00051-003.mp3")).then(b=>{ FM.buf=b; return b; }).catch(()=>{ FM.loading=null; return null; }); return FM.loading; }
 function fmStart(){ if(!ac || FM.src) return; buildMusic(); fmLoad().then(b=>{ if(!b){ toast("배경음악 파일(audio/bgm.mp3)을 찾지 못했어요"); return; } if(FM.src || !musicOn || !MSTY[musStyle].file) return;
   if(!FM.g){ FM.g=ac.createGain(); FM.g.gain.value=.9; FM.g.connect(MUS.bus); } const src=ac.createBufferSource(); src.buffer=b; src.loop=true; src.connect(FM.g); src.start(); FM.src=src; }); }
 function fmStop(){ if(FM.src){ try{ FM.src.stop(); }catch(e){} FM.src.disconnect(); FM.src=null; } }
@@ -4191,7 +4191,7 @@ const REC={on:false,buf:null,src:null,gain:null,start:0,off:0,dur:0,last:-1,load
   onsets:[10.29, 18.21, 24.61, 26.19, 26.83, 27.25, 27.55, 27.79, 28.0, 28.18, 28.36, 28.53, 28.69, 29.29, 31.24, 39.48, 41.18, 41.81, 42.2, 42.5, 42.72, 42.91, 43.09, 43.26, 43.42, 43.57, 43.73, 45.69, 53.56, 55.09, 56.18, 56.75, 57.14, 57.44, 57.67, 57.86, 58.04, 58.22, 58.38, 60.54, 72.44, 74.08, 74.7, 75.11, 75.44, 75.71, 75.95, 76.15, 76.35, 76.53, 76.72, 76.88, 77.19, 79.05, 80.78, 82.07, 82.79, 83.26, 83.65, 83.98, 84.27, 84.53, 84.75, 84.94, 85.12, 85.59, 85.74, 85.89, 86.05, 86.19, 87.51, 88.39, 89.2, 89.58, 89.97, 90.35, 90.74, 91.13, 91.57, 92.44, 93.28, 94.11, 94.52, 95.31, 95.7, 96.11, 96.5, 97.3, 97.68, 98.06, 98.45, 98.83, 99.21, 99.61, 100.0, 100.38, 100.76, 101.14, 101.51, 101.9, 102.28, 102.67, 103.06, 103.43, 103.81, 104.19, 104.56, 104.95, 105.33, 105.71, 106.08, 106.5, 107.66, 108.4, 109.15, 109.54, 109.92, 110.29, 110.67, 111.42, 111.81, 112.17, 112.54, 112.92, 113.29, 113.67, 114.06, 114.42, 114.81, 115.17, 115.56]};
 function recLoad(){
   if(REC.buf) return Promise.resolve(REC.buf); if(REC.loading) return REC.loading;
-  const tryGet=async()=>{ for(const u of ["audio/yeombul.mp3","yeombul.mp3","audio/yeombul.MP3"]){ try{ const r=await fetch(u,{cache:"no-cache"}); if(r.ok) return await r.arrayBuffer(); }catch(e){} } throw 0; };
+  const tryGet=async()=>{ for(const u of ["audio/yeombul.mp3","yeombul.mp3","audio/yeombul.MP3",encodeURI("audio/"+"염불소리1".normalize("NFD")+".wav"),encodeURI("audio/염불소리1.wav"),encodeURI("염불소리1".normalize("NFD")+".wav"),encodeURI("염불소리1.wav")]){ try{ const r=await fetch(u,{cache:"no-cache"}); if(r.ok) return await r.arrayBuffer(); }catch(e){} } throw 0; };
   REC.loading=tryGet().then(ab=>new Promise((res,rej)=>ac.decodeAudioData(ab,res,rej))).then(b=>{ REC.buf=b; REC.dur=b.duration; return b; }).catch(()=>{ REC.loading=null; return null; });
   return REC.loading;
 }
